@@ -508,7 +508,7 @@ class AgentCheck(object):
         """ Add a warning message that will be printed in the info page
         :param warning_message: String. Warning message to be displayed
         """
-        self.warnings.append(warning_message)
+        self.warnings.append(str(warning_message))
 
     def get_library_info(self):
         if self.library_versions is not None:
