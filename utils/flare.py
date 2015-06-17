@@ -85,7 +85,7 @@ class Flare(object):
     # Otherwise emit a warning, and ask for confirmation
     @staticmethod
     def check_user_rights():
-        if Platform.is_unix() and not os.geteuid() == 0:
+        if Platform.is_linux() and not os.geteuid() == 0:
             log.warning("You are not root, some information won't be collected")
             choice = raw_input('Are you sure you want to continue [y/N]? ')
             if choice.strip().lower() not in ['yes', 'y']:
@@ -294,7 +294,11 @@ class Flare(object):
 
     # Find the agent exec (package or source)
     def _get_path_agent_exec(self):
-        agent_exec = '/etc/init.d/datadog-agent'
+        if Platform.is_mac():
+            agent_exec = '/opt/datadog-agent/bin/datadog-agent'
+        else:
+            agent_exec = '/etc/init.d/datadog-agent'
+
         if not os.path.isfile(agent_exec):
             agent_exec = os.path.join(
                 os.path.dirname(os.path.realpath(__file__)),
@@ -314,7 +318,11 @@ class Flare(object):
 
     # Find the supervisor conf (package or source)
     def _get_path_supervisor_conf(self):
-        supervisor_conf = '/etc/dd-agent/supervisor.conf'
+        if Platform.is_mac():
+            supervisor_conf = '/opt/datadog-agent/etc/supervisor.conf'
+        else:
+            supervisor_conf = '/etc/dd-agent/supervisor.conf'
+
         if not os.path.isfile(supervisor_conf):
             supervisor_conf = os.path.join(
                 os.path.dirname(os.path.realpath(__file__)),

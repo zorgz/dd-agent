@@ -5,7 +5,7 @@ logfile=ddagent-install.log
 gist_request=/tmp/agent-gist-request.tmp
 gist_response=/tmp/agent-gist-response.tmp
 dmg_file=/tmp/datadog-agent.dmg
-dmg_url="http://dd-pastebin.s3.amazonaws.com/dd-agent/datadog-agent-5.3.0.dmg"
+dmg_url="https://s3.amazonaws.com/dd-agent/datadog-agent-5.4.2.dmg"
 
 # Root user detection
 if [ $(echo "$UID") = "0" ]; then
@@ -56,15 +56,18 @@ cd / && $sudo_cmd /usr/sbin/installer -pkg `find "/Volumes/datadog_agent" -name 
 $sudo_cmd hdiutil detach "/Volumes/datadog_agent" >/dev/null
 
 # Set the configuration
-if egrep 'api_key:( APIKEY)?$' "/Applications/Datadog Agent.app/Contents/Resources/datadog.conf" > /dev/null 2>&1; then
+if egrep 'api_key:( APIKEY)?$' "/opt/datadog-agent/etc/datadog.conf" > /dev/null 2>&1; then
     printf "\033[34m\n* Adding your API key to the Agent configuration: datadog.conf\n\033[0m\n"
-    $sudo_cmd sh -c "sed -i '' 's/api_key:.*/api_key: $apikey/' \"/Applications/Datadog Agent.app/Contents/Resources/datadog.conf\""
-    $sudo_cmd chown $real_user:admin "/Applications/Datadog Agent.app/Contents/Resources/datadog.conf"
+    $sudo_cmd sh -c "sed -i '' 's/api_key:.*/api_key: $apikey/' \"/opt/datadog-agent/etc/datadog.conf\""
+    $sudo_cmd chown $real_user:admin "/opt/datadog-agent/etc/datadog.conf"
     printf "\033[34m* Restarting the Agent...\n\033[0m\n"
-    $cmd_real_user "/Applications/Datadog Agent.app/Contents/MacOS/datadog-agent" restart >/dev/null
+    $cmd_real_user "/opt/datadog-agent/bin/datadog-agent" restart >/dev/null
 else
     printf "\033[34m\n* Keeping old datadog.conf configuration file\n\033[0m\n"
 fi
+
+# Starting the app
+$cmd_real_user open -a 'Datadog Agent.app'
 
 # Wait for metrics to be submitted by the forwarder
 printf "\033[32m
@@ -98,11 +101,13 @@ printf "\033[32m
 Your Agent is running and functioning properly. It will continue to run in the
 background and submit metrics to Datadog.
 
-If you ever want to stop the Agent, please use the Datadog Agent App.
+If you ever want to stop the Agent, please use the Datadog Agent App or
+datadog-agent command.
 
-If you want to enable it at startup, run these commands: (the agent will still run as your user)
+It will start automatically at login, if you want to enable it at startup,
+run these commands: (the agent will still run as your user)
 
-    sudo cp '/Applications/Datadog Agent.app/Contents/Resources/com.datadoghq.Agent.plist' /Library/LaunchDaemons
-    sudo launchctl load -w /Library/LaunchDaemons/com.datadoghq.Agent.plist
+    sudo cp '/opt/datadog-agent/etc/com.datadoghq.agent.plist' /Library/LaunchDaemons
+    sudo launchctl load -w /Library/LaunchDaemons/com.datadoghq.agent.plist
 
 \033[0m"
