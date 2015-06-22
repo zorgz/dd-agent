@@ -28,7 +28,7 @@ from utils.subprocess_output import subprocess
 import yaml
 
 # CONSTANTS
-AGENT_VERSION = "5.5.0"
+AGENT_VERSION = "5.4.2"
 DATADOG_CONF = "datadog.conf"
 UNIX_CONFIG_PATH = '/etc/dd-agent'
 MAC_CONFIG_PATH = '/opt/datadog-agent/etc'
