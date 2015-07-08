@@ -363,8 +363,8 @@ class MySql(AgentCheck):
         key_cache_utilization = 1 - ((key_blocks_unused * key_cache_block_size) / key_buffer_size)
 
         results['Key_buffer_size'] = key_buffer_size
-        results['Key_buffer_bytes_used'] = self._collect_scalar('Key_blocks_used', status_results) * key_cache_block_size
-        results['Key_buffer_bytes_unflushed'] = self._collect_scalar('Key_blocks_not_flushed', status_results) * key_cache_block_size
+        results['Key_buffer_bytes_used'] = self._collect_scalar('Key_blocks_used', results) * key_cache_block_size
+        results['Key_buffer_bytes_unflushed'] = self._collect_scalar('Key_blocks_not_flushed', results) * key_cache_block_size
         results['Key_cache_utilization'] = key_cache_utilization
 
         #Get aggregate of all VARS we want to collect
@@ -382,12 +382,12 @@ class MySql(AgentCheck):
         self._rate_or_gauge_vars(VARS, results, tags)
 
         if 'galera_cluster' in options and options['galera_cluster']:
-            value = self._collect_scalar('wsrep_cluster_size', status_results)
+            value = self._collect_scalar('wsrep_cluster_size', results)
             self.gauge('mysql.galera.wsrep_cluster_size', value, tags=tags)
 
         if 'replication' in options and options['replication']:
             # get slave running form global status page
-            slave_running = self._collect_string('Slave_running', status_results)
+            slave_running = self._collect_string('Slave_running', results)
             if slave_running is not None:
                 if slave_running.lower().strip() == 'on':
                     slave_running = 1
@@ -655,7 +655,7 @@ class MySql(AgentCheck):
         cursor.close()
         del cursor
 
-        results  = {
+        results = {
             'Innodb_mutex_spin_waits': 0,
             'Innodb_mutex_spin_rounds': 0,
             'Innodb_mutex_os_waits': 0,
@@ -873,7 +873,7 @@ class MySql(AgentCheck):
                 results['Innodb_log_writes'] = long(row[0])
             elif line.find(" pending log writes, ") > 0:
                 # 0 pending log writes, 0 pending chkp writes
-                results['Innodb_pending_log_writes']  = long(row[0])
+                results['Innodb_pending_log_writes'] = long(row[0])
                 results['Innodb_pending_checkpoint_writes'] = long(row[4])
             elif line.find("Log sequence number") == 0:
                 # This number is NOT printed in hex in InnoDB plugin.
