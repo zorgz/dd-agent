@@ -13,6 +13,7 @@ instances:
     # options:               # Optional
     #   replication: 0
     #   galera_cluster: 1
+
     # queries:               # Optional
     #  - # Sample Custom metric
     #    query: SELECT TIMESTAMPDIFF(second,MAX(create_time),NOW()) as last_accessed FROM requests
@@ -24,3 +25,6 @@ instances:
     #    metric: app.seconds_since_new_user
     #    type: gauge
     #    field: last_user
+    
+    #  extra_status_metrics: 0
+    #  extra_innodb_metrics: 0
