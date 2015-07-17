@@ -762,11 +762,18 @@ def load_check_directory(agentConfig, hostname):
         log.error("No conf.d folder found at '%s' or in the directory where the Agent is currently deployed.\n" % e.args[0])
         sys.exit(3)
 
+    from service_discovery.docker_discovery import get_configs
+
+    docker_configs = get_configs()
+
     # We don't support old style configs anymore
     # So we iterate over the files in the checks.d directory
     # If there is a matching configuration file in the conf.d directory
     # then we import the check
     for check in itertools.chain(*checks_paths):
+        docker_init_config = None
+        docker_instances = None
+        skip_load = False
         check_name = os.path.basename(check).split('.')[0]
         check_config = None
         if check_name in initialized_checks or check_name in init_failed_checks:
@@ -785,34 +792,41 @@ def load_check_directory(agentConfig, hostname):
             # Default checks read their config from the "[CHECKNAME].yaml.default" file
             default_conf_path = os.path.join(confd_path, '%s.yaml.default' % check_name)
             if not os.path.exists(default_conf_path):
-                log.debug("Default configuration file {0} is missing. Skipping check".format(default_conf_path))
-                continue
+                if check_name not in docker_configs:
+                    log.debug("Default configuration file {0} is missing. Skipping check".format(default_conf_path))
+                    continue
+                else:
+                    docker_init_config, docker_instances = docker_configs[check_name]
+                    check_config = {"init_config": docker_init_config, "instances": docker_instances}
+                    skip_load = True
+
             conf_path = default_conf_path
             conf_exists = True
 
-        if conf_exists:
-            try:
-                check_config = check_yaml(conf_path)
-            except Exception, e:
-                log.exception("Unable to parse yaml config in %s" % conf_path)
-                traceback_message = traceback.format_exc()
-                init_failed_checks[check_name] = {'error': str(e), 'traceback': traceback_message}
-                continue
-        else:
-            # Compatibility code for the Nagios checks if it's still configured
-            # in datadog.conf
-            # FIXME: 6.x, should be removed
-            if check_name == 'nagios':
-                if any([nagios_key in agentConfig for nagios_key in NAGIOS_OLD_CONF_KEYS]):
-                    log.warning("Configuring Nagios in datadog.conf is deprecated "
-                                "and will be removed in a future version. "
-                                "Please use conf.d")
-                    check_config = {'instances':[dict((key, agentConfig[key]) for key in agentConfig if key in NAGIOS_OLD_CONF_KEYS)]}
-                else:
+        if not skip_load:
+            if conf_exists:
+                try:
+                    check_config = check_yaml(conf_path)
+                except Exception, e:
+                    log.exception("Unable to parse yaml config in %s" % conf_path)
+                    traceback_message = traceback.format_exc()
+                    init_failed_checks[check_name] = {'error': str(e), 'traceback': traceback_message}
                     continue
             else:
-                log.debug("No configuration file for %s" % check_name)
-                continue
+                # Compatibility code for the Nagios checks if it's still configured
+                # in datadog.conf
+                # FIXME: 6.x, should be removed
+                if check_name == 'nagios':
+                    if any([nagios_key in agentConfig for nagios_key in NAGIOS_OLD_CONF_KEYS]):
+                        log.warning("Configuring Nagios in datadog.conf is deprecated "
+                                    "and will be removed in a future version. "
+                                    "Please use conf.d")
+                        check_config = {'instances':[dict((key, agentConfig[key]) for key in agentConfig if key in NAGIOS_OLD_CONF_KEYS)]}
+                    else:
+                        continue
+                else:
+                    log.debug("No configuration file for %s" % check_name)
+                    continue
 
         # If we are here, there is a valid matching configuration file.
         # Let's try to import the check
