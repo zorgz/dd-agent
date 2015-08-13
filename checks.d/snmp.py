@@ -32,7 +32,7 @@ SNMP_GAUGES = frozenset([
     snmp_type.Integer.__name__,
     snmp_type.Integer32.__name__])
 
-OID_BATCH_SIZE = 10
+OID_BATCH_SIZE = 1
 
 
 def reply_invalid(oid):
