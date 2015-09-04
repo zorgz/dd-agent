@@ -386,7 +386,7 @@ class MySql(AgentCheck):
             try:
                 if sys.platform.startswith("linux"):
                     ps = get_subprocess_output(['ps', '-C', 'mysqld', '-o', 'pid'], self.log)
-                    pslines = ps.strip().split('\n')
+                    pslines = ps.strip().splitlines()
                     # First line is header, second line is mysql pid
                     if len(pslines) == 2 and pslines[1] != '':
                         pid = int(pslines[1])
