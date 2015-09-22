@@ -78,6 +78,8 @@ class Flare(object):
     COMMENT_REGEX = re.compile('^ *#.*')
     APIKEY_REGEX = re.compile('^api_key: *\w+(\w{5})$')
     REPLACE_APIKEY = r'api_key: *************************\1'
+    PROXY_REGEX = re.compile('^(proxy_user|proxy_password): *.+')
+    REPLACE_PROXY = r'\1: ********'
     COMPRESSED_FILE = 'datadog-agent-{0}.tar.bz2'
     # We limit to 10MB arbitrarily
     MAX_UPLOAD_SIZE = 10485000
@@ -335,9 +337,17 @@ class Flare(object):
             with open(file_path, 'r') as orig_file:
                 for line in orig_file.readlines():
                     if not self.COMMENT_REGEX.match(line):
-                        temp_file.write(re.sub(self.APIKEY_REGEX, self.REPLACE_APIKEY, line))
+                        temp_file.write(self._clean_credentials(line))
 
         return temp_path
+
+    # Return the given config line without the api key and the proxy credentials (if present)
+    def _clean_credentials(self, line):
+        return re.sub(
+            self.PROXY_REGEX,
+            self.REPLACE_PROXY,
+            re.sub(self.APIKEY_REGEX, self.REPLACE_APIKEY, line),
+        )
 
     # Remove password before collecting the file
     def _add_clean_confd(self, file_path):
