@@ -231,11 +231,11 @@ class Flare(object):
     # Collect all conf
     def _add_conf_tar(self):
         conf_path = get_config_path()
-        if self._can_read(conf_path):
-            self._add_file_tar(
-                self._strip_comment(conf_path),
-                os.path.join('etc', 'datadog.conf'),
-                original_file_path=conf_path
+        if self._can_read(conf_path, output=False):
+            self._add_clean_conf(
+                conf_path,
+                'etc',
+                self._strip_comment_and_credentials
             )
 
         if not Platform.is_windows():
@@ -243,17 +243,21 @@ class Flare(object):
                 os.path.dirname(get_config_path()),
                 'supervisor.conf'
             )
-            if self._can_read(supervisor_path):
-                self._add_file_tar(
-                    self._strip_comment(supervisor_path),
-                    os.path.join('etc', 'supervisor.conf'),
-                    original_file_path=supervisor_path
+            if self._can_read(supervisor_path, output=False):
+                self._add_clean_conf(
+                    supervisor_path,
+                    'etc',
+                    self._strip_comment_and_credentials
                 )
 
         for file_path in glob.glob(os.path.join(get_confd_path(), '*.yaml')) +\
                 glob.glob(os.path.join(get_confd_path(), '*.yaml.default')):
             if self._can_read(file_path, output=False):
-                self._add_clean_confd(file_path)
+                self._add_clean_conf(
+                    file_path,
+                    os.path.join('etc', 'confd'),
+                    self._strip_password
+                )
 
     # Collect JMXFetch-specific info and save to jmxinfo directory if jmx config
     # files are present and valid
@@ -329,37 +333,50 @@ class Flare(object):
                 log.warn("  * not readable - {0}".format(f))
             return False
 
-    # Return path to a temp file without comment
-    def _strip_comment(self, file_path):
+    def _add_clean_conf(self, file_path, target_dir, strip_function):
+        basename = os.path.basename(file_path)
+
+        temp_path, log_message = strip_function(file_path)
+        log.info('  * {0}{1}'.format(file_path, log_message))
+        self._add_file_tar(
+            temp_path,
+            os.path.join(target_dir, basename),
+            original_file_path=file_path
+        )
+
+    # Return path to a temp file without comments and credentials
+    def _strip_comment_and_credentials(self, file_path):
+        credentials_found = set()
         fh, temp_path = tempfile.mkstemp(prefix='dd')
         atexit.register(os.remove, temp_path)
         with os.fdopen(fh, 'w') as temp_file:
             with open(file_path, 'r') as orig_file:
                 for line in orig_file.readlines():
                     if not self.COMMENT_REGEX.match(line):
-                        temp_file.write(self._clean_credentials(line))
+                        clean_line, credential_found = self._clean_credentials(line)
+                        temp_file.write(clean_line)
+                        if credential_found:
+                            credentials_found.add(credential_found)
 
-        return temp_path
+        credentials_log = ''
+        if credentials_found:
+            credentials_log = ' - this file contains credentials which have been'\
+                              ' removed in the version collected: {0}'\
+                              .format(', '.join(credentials_found))
 
-    # Return the given config line without the api key and the proxy credentials (if present)
+        return temp_path, credentials_log
+
+    # Return the given config line without credentials (api_key and proxy creds, if present)
     def _clean_credentials(self, line):
-        return re.sub(
-            self.PROXY_REGEX,
-            self.REPLACE_PROXY,
-            re.sub(self.APIKEY_REGEX, self.REPLACE_APIKEY, line),
-        )
+        credential_found = None
+        if self.APIKEY_REGEX.match(line):
+            line = re.sub(self.APIKEY_REGEX, self.REPLACE_APIKEY, line)
+            credential_found = 'api_key'
+        elif self.PROXY_REGEX.match(line):
+            line = re.sub(self.PROXY_REGEX, self.REPLACE_PROXY, line)
+            credential_found = 'proxy credentials'
 
-    # Remove password before collecting the file
-    def _add_clean_confd(self, file_path):
-        basename = os.path.basename(file_path)
-
-        temp_path, password_found = self._strip_password(file_path)
-        log.info("  * {0}{1}".format(file_path, password_found))
-        self._add_file_tar(
-            temp_path,
-            os.path.join('etc', 'conf.d', basename),
-            original_file_path=file_path
-        )
+        return line, credential_found
 
     # Return path to a temp file without password and comment
     def _strip_password(self, file_path):
@@ -367,16 +384,16 @@ class Flare(object):
         atexit.register(os.remove, temp_path)
         with os.fdopen(fh, 'w') as temp_file:
             with open(file_path, 'r') as orig_file:
-                password_found = ''
+                password_found_log = ''
                 for line in orig_file.readlines():
                     if self.PASSWORD_REGEX.match(line):
                         line = re.sub(self.PASSWORD_REGEX, r'\1 ********', line)
-                        password_found = ' - this file contains a password which '\
-                                         'has been removed in the version collected'
+                        password_found_log = ' - this file contains a password which '\
+                                             'has been removed in the version collected'
                     if not self.COMMENT_REGEX.match(line):
                         temp_file.write(line)
 
-        return temp_path, password_found
+        return temp_path, password_found_log
 
     # Add output of the command to the tarfile
     def _add_command_output_tar(self, name, command, command_desc=None):
