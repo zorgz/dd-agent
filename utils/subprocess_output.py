@@ -1,4 +1,5 @@
 # stdlib
+from contextlib import nested
 from functools import wraps
 import logging
 import subprocess
@@ -17,20 +18,19 @@ def get_subprocess_output(command, log, shell=None, stdin=None):
     # Use tempfile, allowing a larger amount of memory. The subprocess.Popen
     # docs warn that the data read is buffered in memory. They suggest not to
     # use subprocess.PIPE if the data size is large or unlimited.
-    with tempfile.TemporaryFile('rw') as stdout_f:
-        with tempfile.TemporaryFile('rw') as stderr_f:
-            proc = subprocess.Popen(command, close_fds=True, shell=shell,
-                                    stdin=stdin, stdout=stdout_f,
-                                    stderr=stderr_f)
-            proc.wait()
-            stderr_f.seek(0)
-            err = stderr_f.read()
-            if err:
-                log.debug("Error while running {0} : {1}".format(" ".join(command),
-                                                                 err))
+    with nested(tempfile.TemporaryFile('rw'), tempfile.TemporaryFile('rw')) as (stdout_f, stderr_f):
+        proc = subprocess.Popen(command, close_fds=True, shell=shell,
+                                stdin=stdin, stdout=stdout_f,
+                                stderr=stderr_f)
+        proc.wait()
+        stderr_f.seek(0)
+        err = stderr_f.read()
+        if err:
+            log.debug("Error while running {0} : {1}".format(" ".join(command),
+                                                             err))
 
-            stdout_f.seek(0)
-            output = stdout_f.read()
+        stdout_f.seek(0)
+        output = stdout_f.read()
     return output
 
 
