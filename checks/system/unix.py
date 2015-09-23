@@ -478,11 +478,12 @@ class Memory(Check):
                 memData['swapTotal'] = 0
                 memData['swapFree'] = 0
                 memData['swapUsed'] = 0
-                for line in sysctl[1:-1]:
-                    line = line.split()
-                    memData['swapTotal'] += int(line[1])
-                    memData['swapFree'] += int(line[3])
-                    memData['swapUsed'] += int(line[2])
+                for line in sysctl[1:]:
+                    if len(line) > 0:
+                        line = line.split()
+                        memData['swapTotal'] += int(line[1])
+                        memData['swapFree'] += int(line[3])
+                        memData['swapUsed'] += int(line[2])
             except Exception:
                 self.logger.exception('Cannot compute stats from swapinfo')
 
@@ -543,13 +544,12 @@ class Processes(Check):
             ps_arg = 'auxww'
         # Get output from ps
         try:
-            processLines = get_subprocess_output(['ps', ps_arg], self.logger).splitlines()
+            processLines = get_subprocess_output(['ps', ps_arg], self.logger).splitlines()  # Also removes a trailing empty line
         except StandardError:
             self.logger.exception('getProcesses')
             return False
 
         del processLines[0]  # Removes the headers
-        processLines.pop()  # Removes a trailing empty line
 
         processes = []
 

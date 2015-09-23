@@ -134,7 +134,7 @@ class Network(AgentCheck):
             # udp6       0      0 :::41458                :::*
 
             metrics = dict.fromkeys(self.NETSTAT_GAUGE.values(), 0)
-            for l in lines[2:-1]:
+            for l in lines[2:]:
                 cols = l.split()
                 # 0          1      2               3                           4               5
                 # tcp        0      0 46.105.75.4:143         90.56.111.177:56867     ESTABLISHED
