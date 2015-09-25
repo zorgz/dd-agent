@@ -257,7 +257,6 @@ class MongoDb(AgentCheck):
         # See http://www.mongodb.org/display/DOCS/Replica+Set+Commands#ReplicaSetCommands-replSetGetStatus
         try:
             data = {}
-
             replSet = db.command('replSetGetStatus')
             if replSet:
                 primary = None
@@ -270,8 +269,11 @@ class MongoDb(AgentCheck):
                     if int(member.get('state')) == 1:
                         primary = member
 
+                self.log.debug(u"'Primary' document:\n {0}".format(primary))
+                self.log.debug(u"'Current' document:\n {0}".format(current))
+
                 # If we have both we can compute a lag time
-                if current is not None and primary is not None:
+                if (current or {}).get('optimeDate') and (primary or {}).get('optimeDate'):
                     lag = primary['optimeDate'] - current['optimeDate']
                     # Python 2.7 has this built in, python < 2.7 don't...
                     if hasattr(lag, 'total_seconds'):
