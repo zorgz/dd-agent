@@ -1,7 +1,6 @@
 # stdlib
 from collections import defaultdict
 import re
-import subprocess
 import xml.parsers.expat # python 2.4 compatible
 
 # project
@@ -89,7 +88,7 @@ class Varnish(AgentCheck):
         else:
             tags += [u'varnish_name:default']
 
-        output = get_subprocess_output(cmd, self.log)
+        output, err = get_subprocess_output(cmd, self.log)
 
         self._parse_varnishstat(output, use_xml, tags)
 
@@ -98,16 +97,13 @@ class Varnish(AgentCheck):
         if varnishadm_path:
             secretfile_path = instance.get('secretfile', '/etc/varnish/secret')
             cmd = ['sudo', varnishadm_path, '-S', secretfile_path, 'debug.health']
-            output = get_subprocess_output(cmd, self.log)
+            output, err = get_subprocess_output(cmd, self.log)
             if output:
                 self._parse_varnishadm(output)
 
     def _get_version_info(self, varnishstat_path):
         # Get the varnish version from varnishstat
-        # FIXME: Use get_subprocess_output() instead of subprocess.Popen
-        output, error = subprocess.Popen([varnishstat_path, "-V"],
-                                         stdout=subprocess.PIPE,
-                                         stderr=subprocess.PIPE).communicate()
+        output, err = get_subprocess_output([varnishstat_path, "-V"], self.log)
 
         # Assumptions regarding varnish's version
         use_xml = True

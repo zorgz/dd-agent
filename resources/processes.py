@@ -36,7 +36,8 @@ class Processes(ResourcePlugin):
                 ps_arg = 'aux'
             else:
                 ps_arg = 'auxww'
-            processLines = get_subprocess_output(['ps', ps_arg], self.log).splitlines()  # Also removes a trailing empty line
+            output, err = get_subprocess_output(['ps', ps_arg], self.log)
+            processLines = output.splitlines()  # Also removes a trailing empty line
         except Exception, e:
             self.log.exception('Cannot get process list')
             return False

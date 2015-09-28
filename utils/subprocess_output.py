@@ -31,7 +31,7 @@ def get_subprocess_output(command, log, shell=None, stdin=None):
 
         stdout_f.seek(0)
         output = stdout_f.read()
-    return output
+    return (output, err)
 
 
 def log_subprocess(func):

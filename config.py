@@ -582,13 +582,16 @@ def get_system_stats():
     platf = sys.platform
 
     if Platform.is_linux(platf):
-        systemStats['cpuCores'] = len(get_subprocess_output(['grep', 'model name', '/proc/cpuinfo'], log).splitlines())
+        output, err = get_subprocess_output(['grep', 'model name', '/proc/cpuinfo'], log)
+        systemStats['cpuCores'] = len(output.splitlines())
 
     if Platform.is_darwin(platf):
-        systemStats['cpuCores'] = int(get_subprocess_output(['sysctl', 'hw.ncpu'], log).split(': ')[1])
+        output, err = get_subprocess_output(['sysctl', 'hw.ncpu'], log)
+        systemStats['cpuCores'] = int(output.split(': ')[1])
 
     if Platform.is_freebsd(platf):
-        systemStats['cpuCores'] = int(get_subprocess_output(['sysctl', 'hw.ncpu'], log).split(': ')[1])
+        output, err = get_subprocess_output(['sysctl', 'hw.ncpu'], log)
+        systemStats['cpuCores'] = int(output.split(': ')[1])
 
     if Platform.is_linux(platf):
         systemStats['nixV'] = platform.dist()
