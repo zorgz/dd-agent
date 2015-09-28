@@ -748,12 +748,22 @@ class VSphereCheck(AgentCheck):
                     continue
                 instance_name = result.id.instance or "none"
                 value = self._transform_value(instance, result.id.counterId, result.value[0])
-                self.gauge(
-                    "vsphere.%s" % self.metrics_metadata[i_key][result.id.counterId]['name'],
-                    value,
-                    hostname=mor['hostname'],
-                    tags=['instance:%s' % instance_name]
-                )
+                metric_type = self.metrics_metadata[i_key][result.id.counterId]['s_type']  # Most common: absolute, delta, and rate
+                metric_name = self.metrics_metadata[i_key][result.id.counterId]['name']
+                if metric_type == 'rate':
+                    self.rate(
+                        "vsphere.%s" % metric_name,
+                        value,
+                        hostname=mor['hostname'],
+                        tags=['instance:%s' % instance_name]
+                    )
+                else:
+                    self.gauge(
+                        "vsphere.%s" % metric_name,
+                        value,
+                        hostname=mor['hostname'],
+                        tags=['instance:%s' % instance_name]
+                    )
 
         ### <TEST-INSTRUMENTATION>
         self.histogram('datadog.agent.vsphere.metric_colection.time', t.total())
