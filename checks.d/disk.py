@@ -176,7 +176,7 @@ class Disk(AgentCheck):
 
     # no psutil, let's use df
     def collect_metrics_manually(self):
-        df_out, err = get_subprocess_output(self.DF_COMMAND + ['-k'], self.log)
+        df_out, err, rtcode = get_subprocess_output(self.DF_COMMAND + ['-k'], self.log)
         self.log.debug(df_out)
         for device in self._list_devices(df_out):
             self.log.debug("Passed: {0}".format(device))

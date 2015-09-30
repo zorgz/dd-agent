@@ -642,7 +642,7 @@ class Collector(object):
                     command = "gohai"
                 else:
                     command = "gohai\gohai.exe"
-                gohai_metadata, gohai_err = get_subprocess_output([command], log)
+                gohai_metadata, gohai_err, rtcode = get_subprocess_output([command], log)
                 payload['gohai'] = gohai_metadata
                 if gohai_err:
                     log.warning("GOHAI LOG | {0}".format(gohai_err))

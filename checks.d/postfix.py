@@ -56,7 +56,7 @@ class PostfixCheck(AgentCheck):
                 # can dd-agent user run sudo?
                 test_sudo = os.system('setsid sudo -l < /dev/null')
                 if test_sudo == 0:
-                    output, err = get_subprocess_output(['sudo', 'find', queue_path, '-type', 'f'], self.log)
+                    output, err, rtcode = get_subprocess_output(['sudo', 'find', queue_path, '-type', 'f'], self.log)
                     count = len(output.splitlines())
                 else:
                     raise Exception('The dd-agent user does not have sudo access')

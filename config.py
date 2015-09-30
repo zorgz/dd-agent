@@ -582,15 +582,15 @@ def get_system_stats():
     platf = sys.platform
 
     if Platform.is_linux(platf):
-        output, err = get_subprocess_output(['grep', 'model name', '/proc/cpuinfo'], log)
+        output, err, rtcode = get_subprocess_output(['grep', 'model name', '/proc/cpuinfo'], log)
         systemStats['cpuCores'] = len(output.splitlines())
 
     if Platform.is_darwin(platf):
-        output, err = get_subprocess_output(['sysctl', 'hw.ncpu'], log)
+        output, err, rtcode = get_subprocess_output(['sysctl', 'hw.ncpu'], log)
         systemStats['cpuCores'] = int(output.split(': ')[1])
 
     if Platform.is_freebsd(platf):
-        output, err = get_subprocess_output(['sysctl', 'hw.ncpu'], log)
+        output, err, rtcode = get_subprocess_output(['sysctl', 'hw.ncpu'], log)
         systemStats['cpuCores'] = int(output.split(': ')[1])
 
     if Platform.is_linux(platf):

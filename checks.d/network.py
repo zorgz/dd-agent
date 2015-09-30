@@ -122,7 +122,7 @@ class Network(AgentCheck):
 
     def _check_linux(self, instance):
         if self._collect_cx_state:
-            output, err = get_subprocess_output(["netstat", "-n", "-u", "-t", "-a"], self.log)
+            output, err, rtcode = get_subprocess_output(["netstat", "-n", "-u", "-t", "-a"], self.log)
             lines = output.splitlines()
             # Active Internet connections (w/o servers)
             # Proto Recv-Q Send-Q Local Address           Foreign Address         State
@@ -227,7 +227,7 @@ class Network(AgentCheck):
         if Platform.is_freebsd():
             netstat_flags.append('-W')
 
-        output, err = get_subprocess_output(["netstat"] + netstat_flags, self.log)
+        output, err, rtcode = get_subprocess_output(["netstat"] + netstat_flags, self.log)
         lines = output.splitlines()
         # Name  Mtu   Network       Address            Ipkts Ierrs     Ibytes    Opkts Oerrs     Obytes  Coll
         # lo0   16384 <Link#1>                        318258     0  428252203   318258     0  428252203     0
@@ -291,7 +291,7 @@ class Network(AgentCheck):
                 self._submit_devicemetrics(iface, metrics)
 
 
-        netstat, err = get_subprocess_output(["netstat", "-s","-p" "tcp"], self.log)
+        netstat, err, rtcode = get_subprocess_output(["netstat", "-s","-p" "tcp"], self.log)
         #3651535 packets sent
         #        972097 data packets (615753248 bytes)
         #        5009 data packets (2832232 bytes) retransmitted
@@ -316,12 +316,12 @@ class Network(AgentCheck):
     def _check_solaris(self, instance):
         # Can't get bytes sent and received via netstat
         # Default to kstat -p link:0:
-        netstat, err = get_subprocess_output(["kstat", "-p", "link:0:"], self.log)
+        netstat, err, rtcode = get_subprocess_output(["kstat", "-p", "link:0:"], self.log)
         metrics_by_interface = self._parse_solaris_netstat(netstat)
         for interface, metrics in metrics_by_interface.iteritems():
             self._submit_devicemetrics(interface, metrics)
 
-        netstat, err = get_subprocess_output(["netstat", "-s", "-P" "tcp"], self.log)
+        netstat, err, rtcode = get_subprocess_output(["netstat", "-s", "-P" "tcp"], self.log)
         # TCP: tcpRtoAlgorithm=     4 tcpRtoMin           =   200
         # tcpRtoMax           = 60000 tcpMaxConn          =    -1
         # tcpActiveOpens      =    57 tcpPassiveOpens     =    50

@@ -88,7 +88,7 @@ class Varnish(AgentCheck):
         else:
             tags += [u'varnish_name:default']
 
-        output, err = get_subprocess_output(cmd, self.log)
+        output, err, rtcode = get_subprocess_output(cmd, self.log)
 
         self._parse_varnishstat(output, use_xml, tags)
 
@@ -97,13 +97,13 @@ class Varnish(AgentCheck):
         if varnishadm_path:
             secretfile_path = instance.get('secretfile', '/etc/varnish/secret')
             cmd = ['sudo', varnishadm_path, '-S', secretfile_path, 'debug.health']
-            output, err = get_subprocess_output(cmd, self.log)
+            output, err, rtcode = get_subprocess_output(cmd, self.log)
             if output:
                 self._parse_varnishadm(output)
 
     def _get_version_info(self, varnishstat_path):
         # Get the varnish version from varnishstat
-        output, err = get_subprocess_output([varnishstat_path, "-V"], self.log)
+        output, error, rtcode = get_subprocess_output([varnishstat_path, "-V"], self.log)
 
         # Assumptions regarding varnish's version
         use_xml = True

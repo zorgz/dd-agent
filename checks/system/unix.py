@@ -107,7 +107,7 @@ class IO(Check):
         io = {}
         try:
             if Platform.is_linux():
-                stdout, err = get_subprocess_output(['iostat', '-d', '1', '2', '-x', '-k'], self.logger)
+                stdout, err, rtcode = get_subprocess_output(['iostat', '-d', '1', '2', '-x', '-k'], self.logger)
 
                 #                 Linux 2.6.32-343-ec2 (ip-10-35-95-10)   12/11/2012      _x86_64_        (2 CPU)
                 #
@@ -127,7 +127,7 @@ class IO(Check):
                 io.update(self._parse_linux2(stdout))
 
             elif sys.platform == "sunos5":
-                output, err = get_subprocess_output(["iostat", "-x", "-d", "1", "2"], self.logger)
+                output, err, rtcode = get_subprocess_output(["iostat", "-x", "-d", "1", "2"], self.logger)
                 iostat = output.splitlines()
 
                 #                   extended device statistics <-- since boot
@@ -157,7 +157,7 @@ class IO(Check):
                         io[cols[0]][self.xlate(headers[i], "sunos")] = cols[i]
 
             elif sys.platform.startswith("freebsd"):
-                output, err = get_subprocess_output(["iostat", "-x", "-d", "1", "2"], self.logger)
+                output, err, rtcode = get_subprocess_output(["iostat", "-x", "-d", "1", "2"], self.logger)
                 iostat = output.splitlines()
 
                 # Be careful!
@@ -184,7 +184,7 @@ class IO(Check):
                     for i in range(1, len(cols)):
                         io[cols[0]][self.xlate(headers[i], "freebsd")] = cols[i]
             elif sys.platform == 'darwin':
-                iostat, err = get_subprocess_output(['iostat', '-d', '-c', '2', '-w', '1'], self.logger)
+                iostat, err, rtcode = get_subprocess_output(['iostat', '-d', '-c', '2', '-w', '1'], self.logger)
                 #          disk0           disk1          <-- number of disks
                 #    KB/t tps  MB/s     KB/t tps  MB/s
                 #   21.11  23  0.47    20.01   0  0.00
@@ -232,7 +232,7 @@ class Load(Check):
         elif sys.platform in ('darwin', 'sunos5') or sys.platform.startswith("freebsd"):
             # Get output from uptime
             try:
-                uptime, err = get_subprocess_output(['uptime'], self.logger)
+                uptime, err, rtcode = get_subprocess_output(['uptime'], self.logger)
             except Exception:
                 self.logger.exception('Cannot extract load')
                 return False
@@ -275,7 +275,7 @@ class Memory(Check):
         self.pagesize = 0
         if sys.platform == 'sunos5':
             try:
-                pgsz, err = get_subprocess_output(['pagesize'], self.logger)
+                pgsz, err, rtcode = get_subprocess_output(['pagesize'], self.logger)
                 self.pagesize = int(pgsz.strip())
             except Exception:
                 # No page size available
@@ -384,9 +384,9 @@ class Memory(Check):
             macV_minor_version = int(re.match(r'10\.(\d+)\.?.*', macV[0]).group(1))
 
             try:
-                output, toperr = get_subprocess_output(['top', '-l 1'], self.logger)
+                output, err, rtcode = get_subprocess_output(['top', '-l 1'], self.logger)
                 top = output.splitlines()
-                sysctl, sysctlerr = get_subprocess_output(['sysctl', 'vm.swapusage'], self.logger)
+                sysctl, err, rtcode = get_subprocess_output(['sysctl', 'vm.swapusage'], self.logger)
             except StandardError:
                 self.logger.exception('getMemoryUsage')
                 return False
@@ -411,7 +411,7 @@ class Memory(Check):
 
         elif sys.platform.startswith("freebsd"):
             try:
-                output, err = get_subprocess_output(['sysctl', 'vm.stats.vm'], self.logger)
+                output, err, rtcode = get_subprocess_output(['sysctl', 'vm.stats.vm'], self.logger)
                 sysctl = output.splitlines()
             except Exception:
                 self.logger.exception('getMemoryUsage')
@@ -466,7 +466,7 @@ class Memory(Check):
 
             # Swap
             try:
-                output, err = get_subprocess_output(['swapinfo', '-m'], self.logger)
+                output, err, rtcode = get_subprocess_output(['swapinfo', '-m'], self.logger)
                 sysctl = output.splitlines()
             except Exception:
                 self.logger.exception('getMemoryUsage')
@@ -496,7 +496,7 @@ class Memory(Check):
         elif sys.platform == 'sunos5':
             try:
                 memData = {}
-                output, err = get_subprocess_output(["kstat", "-c", "zone_memory_cap", "-p"], self.logger)
+                output, err, rtcode = get_subprocess_output(["kstat", "-c", "zone_memory_cap", "-p"], self.logger)
                 kmem = output.splitlines()
 
                 # memory_cap:360:53aa9b7e-48ba-4152-a52b-a6368c:anon_alloc_fail   0
@@ -550,7 +550,7 @@ class Processes(Check):
             ps_arg = 'auxww'
         # Get output from ps
         try:
-            output, err = get_subprocess_output(['ps', ps_arg], self.logger)
+            output, err, rtcode = get_subprocess_output(['ps', ps_arg], self.logger)
             processLines = output.splitlines()  # Also removes a trailing empty line
         except StandardError:
             self.logger.exception('getProcesses')
@@ -594,7 +594,7 @@ class Cpu(Check):
                 return 0.0
         try:
             if Platform.is_linux():
-                output, err = get_subprocess_output(['mpstat', '1', '3'], self.logger)
+                output, err, rtcode = get_subprocess_output(['mpstat', '1', '3'], self.logger)
                 mpstat = output.splitlines()
                 # topdog@ip:~$ mpstat 1 3
                 # Linux 2.6.32-341-ec2 (ip)   01/19/2012  _x86_64_  (2 CPU)
@@ -655,7 +655,7 @@ class Cpu(Check):
             elif sys.platform == 'darwin':
                 # generate 3 seconds of data
                 # ['          disk0           disk1       cpu     load average', '    KB/t tps  MB/s     KB/t tps  MB/s  us sy id   1m   5m   15m', '   21.23  13  0.27    17.85   7  0.13  14  7 79  1.04 1.27 1.31', '    4.00   3  0.01     5.00   8  0.04  12 10 78  1.04 1.27 1.31', '']
-                iostats, err = get_subprocess_output(['iostat', '-C', '-w', '3', '-c', '2'], self.logger)
+                iostats, err, rtcode = get_subprocess_output(['iostat', '-C', '-w', '3', '-c', '2'], self.logger)
                 lines = [l for l in iostats.splitlines() if len(l) > 0]
                 legend = [l for l in lines if "us" in l]
                 if len(legend) == 1:
@@ -677,7 +677,7 @@ class Cpu(Check):
                 # tin  tout  KB/t tps  MB/s   KB/t tps  MB/s   KB/t tps  MB/s  us ni sy in id
                 # 0    69 26.71   0  0.01   0.00   0  0.00   0.00   0  0.00   2  0  0  1 97
                 # 0    78  0.00   0  0.00   0.00   0  0.00   0.00   0  0.00   0  0  0  0 100
-                iostats, err = get_subprocess_output(['iostat', '-w', '3', '-c', '2'], self.logger)
+                iostats, err, rtcode = get_subprocess_output(['iostat', '-w', '3', '-c', '2'], self.logger)
                 lines = [l for l in iostats.splitlines() if len(l) > 0]
                 legend = [l for l in lines if "us" in l]
                 if len(legend) == 1:
@@ -707,7 +707,7 @@ class Cpu(Check):
                 # http://docs.oracle.com/cd/E23824_01/html/821-1462/mpstat-1m.html
                 #
                 # Will aggregate over all processor sets
-                    output, err = get_subprocess_output(['mpstat', '-aq', '1', '2'], self.logger)
+                    output, err, rtcode = get_subprocess_output(['mpstat', '-aq', '1', '2'], self.logger)
                     mpstat = output.splitlines()
                     lines = [l for l in mpstat if len(l) > 0]
                     # discard the first len(lines)/2 lines
