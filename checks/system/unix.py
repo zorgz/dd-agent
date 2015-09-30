@@ -72,7 +72,7 @@ class IO(Check):
         for idx, disk in enumerate(disks):
             kb_t, tps, mb_s = map(float, lastline[(3 * idx):(3 * idx) + 3])  # 3 cols at a time
             io[disk] = {
-                'system.io.bytes_per_s': mb_s * 10**6,
+                'system.io.bytes_per_s': mb_s * 2**20,
             }
         return io
 
@@ -496,7 +496,8 @@ class Memory(Check):
         elif sys.platform == 'sunos5':
             try:
                 memData = {}
-                output, err, rtcode = get_subprocess_output(["kstat", "-c", "zone_memory_cap", "-p"], self.logger)
+                cmd = ["kstat", "-m", "memory_cap", "-c", "zone_memory_cap", "-p"]
+                output, err, rtcode = get_subprocess_output(cmd, self.logger)
                 kmem = output.splitlines()
 
                 # memory_cap:360:53aa9b7e-48ba-4152-a52b-a6368c:anon_alloc_fail   0

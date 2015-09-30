@@ -27,20 +27,35 @@ class Network(AgentCheck):
     SOURCE_TYPE_NAME = 'system'
 
     TCP_STATES = {
-        "ESTABLISHED": "established",
-        "SYN_SENT": "opening",
-        "SYN_RECV": "opening",
-        "FIN_WAIT1": "closing",
-        "FIN_WAIT2": "closing",
-        "TIME_WAIT": "time_wait",
-        "CLOSE": "closing",
-        "CLOSE_WAIT": "closing",
-        "LAST_ACK": "closing",
-        "LISTEN": "listening",
-        "CLOSING": "closing",
+        "ss": {
+            "ESTAB": "established",
+            "SYN-SENT": "opening",
+            "SYN-RECV": "opening",
+            "FIN-WAIT-1": "closing",
+            "FIN-WAIT-2": "closing",
+            "TIME-WAIT": "time_wait",
+            "UNCONN": "closing",
+            "CLOSE-WAIT": "closing",
+            "LAST-ACK": "closing",
+            "LISTEN": "listening",
+            "CLOSING": "closing",
+        },
+        "netstat": {
+            "ESTABLISHED": "established",
+            "SYN_SENT": "opening",
+            "SYN_RECV": "opening",
+            "FIN_WAIT1": "closing",
+            "FIN_WAIT2": "closing",
+            "TIME_WAIT": "time_wait",
+            "CLOSE": "closing",
+            "CLOSE_WAIT": "closing",
+            "LAST_ACK": "closing",
+            "LISTEN": "listening",
+            "CLOSING": "closing",
+        }
     }
 
-    NETSTAT_GAUGE = {
+    CX_STATE_GAUGE = {
         ('udp4', 'connections') : 'system.net.udp4.connections',
         ('udp6', 'connections') : 'system.net.udp6.connections',
         ('tcp4', 'established') : 'system.net.tcp4.established',
@@ -113,7 +128,7 @@ class Network(AgentCheck):
                 return 0
 
     def _submit_regexed_values(self, output, regex_list):
-        lines = output.split("\n")
+        lines = output.splitlines()
         for line in lines:
             for regex, metric in regex_list:
                 value = re.match(regex, line)
@@ -122,36 +137,45 @@ class Network(AgentCheck):
 
     def _check_linux(self, instance):
         if self._collect_cx_state:
-            output, err, rtcode = get_subprocess_output(["netstat", "-n", "-u", "-t", "-a"], self.log)
-            lines = output.splitlines()
-            # Active Internet connections (w/o servers)
-            # Proto Recv-Q Send-Q Local Address           Foreign Address         State
-            # tcp        0      0 46.105.75.4:80          79.220.227.193:2032     SYN_RECV
-            # tcp        0      0 46.105.75.4:143         90.56.111.177:56867     ESTABLISHED
-            # tcp        0      0 46.105.75.4:50468       107.20.207.175:443      TIME_WAIT
-            # tcp6       0      0 46.105.75.4:80          93.15.237.188:58038     FIN_WAIT2
-            # tcp6       0      0 46.105.75.4:80          79.220.227.193:2029     ESTABLISHED
-            # udp        0      0 0.0.0.0:123             0.0.0.0:*
-            # udp6       0      0 :::41458                :::*
+            try:
+                self.log.debug("Using `ss` to collect connection state")
+                # Try using `ss` for increased performance over `netstat`
+                for ip_version in ['4', '6']:
+                    # Call `ss` for each IP version because there's no built-in way of distinguishing
+                    # between the IP versions in the output
+                    output, err, rtcode = get_subprocess_output(["ss", "-n", "-u", "-t", "-a", "-{0}".format(ip_version)], self.log)
+                    lines = output.splitlines()
+                    # Netid  State      Recv-Q Send-Q     Local Address:Port       Peer Address:Port
+                    # udp    UNCONN     0      0              127.0.0.1:8125                  *:*
+                    # udp    ESTAB      0      0              127.0.0.1:37036         127.0.0.1:8125
+                    # udp    UNCONN     0      0        fe80::a00:27ff:fe1c:3c4:123          :::*
+                    # tcp    TIME-WAIT  0      0          90.56.111.177:56867        46.105.75.4:143
+                    # tcp    LISTEN     0      0       ::ffff:127.0.0.1:33217  ::ffff:127.0.0.1:7199
+                    # tcp    ESTAB      0      0       ::ffff:127.0.0.1:58975  ::ffff:127.0.0.1:2181
 
-            metrics = dict.fromkeys(self.NETSTAT_GAUGE.values(), 0)
-            for l in lines[2:]:
-                cols = l.split()
-                # 0          1      2               3                           4               5
+                    metrics = self._parse_linux_cx_state(lines[1:], self.TCP_STATES['ss'], 1, ip_version=ip_version)
+                    # Only send the metrics which match the loop iteration's ip version
+                    for stat, metric in self.CX_STATE_GAUGE.iteritems():
+                        if stat[0].endswith(ip_version):
+                            self.gauge(metric, metrics.get(metric))
+
+            except OSError:
+                self.log.info("`ss` not found: using `netstat` as a fallback")
+                output, err, rtcode = get_subprocess_output(["netstat", "-n", "-u", "-t", "-a"], self.log)
+                lines = output.splitlines()
+                # Active Internet connections (w/o servers)
+                # Proto Recv-Q Send-Q Local Address           Foreign Address         State
+                # tcp        0      0 46.105.75.4:80          79.220.227.193:2032     SYN_RECV
                 # tcp        0      0 46.105.75.4:143         90.56.111.177:56867     ESTABLISHED
-                if cols[0].startswith("tcp"):
-                    protocol = ("tcp4", "tcp6")[cols[0] == "tcp6"]
-                    if cols[5] in self.TCP_STATES:
-                        metric = self.NETSTAT_GAUGE[protocol, self.TCP_STATES[cols[5]]]
-                        metrics[metric] += 1
-                elif cols[0].startswith("udp"):
-                    protocol = ("udp4", "udp6")[cols[0] == "udp6"]
-                    metric = self.NETSTAT_GAUGE[protocol, 'connections']
-                    metrics[metric] += 1
+                # tcp        0      0 46.105.75.4:50468       107.20.207.175:443      TIME_WAIT
+                # tcp6       0      0 46.105.75.4:80          93.15.237.188:58038     FIN_WAIT2
+                # tcp6       0      0 46.105.75.4:80          79.220.227.193:2029     ESTABLISHED
+                # udp        0      0 0.0.0.0:123             0.0.0.0:*
+                # udp6       0      0 :::41458                :::*
 
-            for metric, value in metrics.iteritems():
-                self.gauge(metric, value)
-
+                metrics = self._parse_linux_cx_state(lines[2:], self.TCP_STATES['netstat'], 5)
+                for metric, value in metrics.iteritems():
+                    self.gauge(metric, value)
 
         proc = open('/proc/net/dev', 'r')
         try:
@@ -219,6 +243,24 @@ class Network(AgentCheck):
         except IOError:
             # On Openshift, /proc/net/snmp is only readable by root
             self.log.debug("Unable to read /proc/net/snmp.")
+
+    # Parse the output of the command that retrieves the connection state (either `ss` or `netstat`)
+    # Returns a dict metric_name -> value
+    def _parse_linux_cx_state(self, lines, tcp_states, state_col, ip_version=None):
+        metrics = dict.fromkeys(self.CX_STATE_GAUGE.values(), 0)
+        for l in lines:
+            cols = l.split()
+            if cols[0].startswith('tcp'):
+                protocol = "tcp{0}".format(ip_version) if ip_version else ("tcp4", "tcp6")[cols[0] == "tcp6"]
+                if cols[state_col] in tcp_states:
+                    metric = self.CX_STATE_GAUGE[protocol, tcp_states[cols[state_col]]]
+                    metrics[metric] += 1
+            elif cols[0].startswith('udp'):
+                protocol = "udp{0}".format(ip_version) if ip_version else ("udp4", "udp6")[cols[0] == "udp6"]
+                metric = self.CX_STATE_GAUGE[protocol, 'connections']
+                metrics[metric] += 1
+
+        return metrics
 
     def _check_bsd(self, instance):
         netstat_flags = ['-i', '-b']
@@ -408,7 +450,7 @@ class Network(AgentCheck):
             'oerrors':'packets_out.error',
         }
 
-        lines = [l for l in netstat_output.split("\n") if len(l) > 0]
+        lines = [l for l in netstat_output.splitlines() if len(l) > 0]
 
         metrics_by_interface = {}
 
