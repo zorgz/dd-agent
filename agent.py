@@ -49,7 +49,7 @@ PID_NAME = "dd-agent"
 WATCHDOG_MULTIPLIER = 10
 RESTART_INTERVAL = 4 * 24 * 60 * 60  # Defaults to 4 days
 START_COMMANDS = ['start', 'restart', 'foreground']
-DD_AGENT_COMMANDS = ['check', 'flare', 'jmx']
+DD_AGENT_COMMANDS = ['check', 'flare', 'jmx', 'reload']
 
 DEFAULT_COLLECTOR_PROFILE_INTERVAL = 20
 
@@ -70,6 +70,7 @@ class Agent(Daemon):
         self.in_developer_mode = in_developer_mode
 
     def _handle_sigterm(self, signum, frame):
+        """Handles SIGTERM and SIGINT, which gracefully stops the agent."""
         log.debug("Caught sigterm. Stopping run loop.")
         self.run_forever = False
 
@@ -78,8 +79,32 @@ class Agent(Daemon):
         log.debug("Collector is stopped.")
 
     def _handle_sigusr1(self, signum, frame):
+        """Handles SIGUSR1, which signals an exit with an autorestart."""
         self._handle_sigterm(signum, frame)
         self._do_restart()
+
+    def _handle_sigusr2(self, signum, frame):
+        """Handles SIGUSR2, which signals a configuration reload."""
+        log.info("Attempting a configuration reload...")
+        self.reload_configs()
+
+    def reload_configs(self):
+        """Reloads the agent configuration and checksd configurations."""
+        config = get_config(parse_args=True)
+        agentConfig = self._set_agent_config_hostname(config)
+        hostname = get_hostname(agentConfig)
+        checksd = load_check_directory(agentConfig, hostname)
+        if checksd:
+            self.collector.initialized_checks_d = checksd['initialized_checks']  # is a list of AgentCheck instances
+            self.collector.init_failed_checks_d = checksd['init_failed_checks']  # is of type {check_name: {error, traceback}}
+
+        num_checks = len(self.collector.initialized_checks_d)
+        if num_checks > 0:
+            log.info("Successfully reloaded {num_checks}: {check_list}".
+                format(num_checks=num_checks,
+                       check_list=self.collector.initialized_checks_d))
+        else:
+            log.info("No checkd configs found")
 
     @classmethod
     def info(cls, verbose=None):
@@ -97,6 +122,9 @@ class Agent(Daemon):
 
         # Handle Keyboard Interrupt
         signal.signal(signal.SIGINT, self._handle_sigterm)
+
+        # A SIGUSR2 signals a configuration reload
+        signal.signal(signal.SIGUSR2, self._handle_sigusr2)
 
         # Save the agent start-up stats.
         CollectorStatus().persist()
@@ -155,22 +183,21 @@ class Agent(Daemon):
             if self.autorestart and self._should_restart():
                 self._do_restart()
 
-            # Only plan for the next loop if we will continue,
-            # otherwise just exit quickly.
+            # Only plan for next loop if we will continue, otherwise exit quickly.
             if self.run_forever:
                 if watchdog:
                     watchdog.reset()
                 if profiled:
                     collector_profiled_runs += 1
                 time.sleep(check_frequency)
+
         # Now clean-up.
         try:
             CollectorStatus.remove_latest_status()
         except Exception:
             pass
 
-        # Explicitly kill the process, because it might be running
-        # as a daemon.
+        # Explicitly kill the process, because it might be running as a daemon.
         log.info("Exiting. Bye bye.")
         sys.exit(0)
 
@@ -255,6 +282,7 @@ def main():
     if command in START_COMMANDS:
         log.info('Agent version %s' % get_version())
 
+    # MAYBE: Add reload command.. problem is that when called this way, agent.collector is None
     if 'start' == command:
         log.info('Start daemon')
         agent.start()
