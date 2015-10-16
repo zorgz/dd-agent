@@ -377,6 +377,95 @@ SELECT relname,
                 self.log.warn('Failed to parse config element=%s, check syntax' % str(element))
         return config
 
+    def _collect_relations_stats_only(self, key, db, instance_tags, relations):
+        full_metric_scope = [
+            self.REL_METRICS,
+            self.IDX_METRICS,
+            self.SIZE_METRICS,
+            self.STATIO_METRICS
+        ]
+        relations_config = self._build_relations_config(relations)
+        try:
+            cursor = db.cursor()
+
+            for scope in full_metric_scope:
+                if not self._is_above(key, db, [9, 0, 0]):
+                    log_func = self.log.debug
+                else:
+                    log_func = self.log.warning
+
+                # build query
+                cols = scope['metrics'].keys()  # list of metrics to query, in some order
+                # we must remember that order to parse results
+
+                try:
+                    # if this is a relation-specific query, we need to list all relations last
+                    if scope['relation'] and len(relations) > 0:
+                        relnames = relations_config.keys()
+                        query = scope['query'] % (", ".join(cols), "%s")  # Keep the last %s intact
+                        self.log.debug("Running query: %s with relations: %s" % (query, relnames))
+                        cursor.execute(query, (relnames,))
+                    else:
+                        continue
+
+                    results = cursor.fetchall()
+                except ProgrammingError, e:
+                    log_func("Not all metrics may be available: %s" % str(e))
+                    continue
+
+                if not results:
+                    continue
+
+                desc = scope['descriptors']
+
+                # parse & submit results
+                # A row should look like this
+                # (descriptor, descriptor, ..., value, value, value, value, ...)
+                # with descriptor a PG relation or index name, which we use to create the tags
+                for row in results:
+                    # Check that all columns will be processed
+                    assert len(row) == len(cols) + len(desc)
+
+                    # build a map of descriptors and their values
+                    desc_map = dict(zip([x[1] for x in desc], row[0:len(desc)]))
+                    if 'schema' in desc_map:
+                        try:
+                            relname = desc_map['table']
+                            config_schemas = relations_config[relname]['schemas']
+                            if config_schemas and desc_map['schema'] not in config_schemas:
+                                continue
+                        except KeyError:
+                            pass
+
+                    # Build tags
+                    # descriptors are: (pg_name, dd_tag_name): value
+                    # Special-case the "db" tag, which overrides the one that is passed as instance_tag
+                    # The reason is that pg_stat_database returns all databases regardless of the
+                    # connection.
+                    tags = [t for t in instance_tags]
+
+                    tags += [("%s:%s" % (k, v)) for (k, v) in desc_map.iteritems()]
+
+                    # [(metric-map, value), (metric-map, value), ...]
+                    # metric-map is: (dd_name, "rate"|"gauge")
+                    # shift the results since the first columns will be the "descriptors"
+                    values = zip([scope['metrics'][c] for c in cols], row[len(desc):])
+
+                    # To submit simply call the function for each value v
+                    # v[0] == (metric_name, submit_function)
+                    # v[1] == the actual value
+                    # tags are
+                    for v in values:
+                        v[0][1](self, v[0][0], v[1], tags=tags)
+
+            cursor.close()
+        except InterfaceError, e:
+            self.log.error("Connection error: %s" % str(e))
+            raise ShouldRestartException
+        except socket.error, e:
+            self.log.error("Connection error: %s" % str(e))
+            raise ShouldRestartException
+
     def _collect_stats(self, key, db, instance_tags, relations, custom_metrics):
         """Query pg_stat_* for various metrics
         If relations is not an empty list, gather per-relation metrics
@@ -585,23 +674,39 @@ SELECT relname,
         self.custom_metrics[key] = custom_metrics
         return custom_metrics
 
+    def _get_all_databases(self, db):
+        cursor = db.cursor()
+        cursor.execute("""SELECT datname
+            FROM pg_stat_database
+             WHERE datname ilike 'atlas%%'
+        """)
+
+        db_list = []
+        for r in cursor.fetchall():
+            db_list.append(r[0])
+
+        return db_list
+
     def check(self, instance):
         host = instance.get('host', '')
         port = instance.get('port', '')
         user = instance.get('username', '')
         password = instance.get('password', '')
         tags = instance.get('tags', [])
-        dbname = instance.get('dbname', None)
+        instance_db_name = instance.get('dbname', None)
         relations = instance.get('relations', [])
         ssl = _is_affirmative(instance.get('ssl', False))
+        track_all_relations_in_cluster = _is_affirmative(instance.get('track_cluster', False))
 
-        if relations and not dbname:
+        if relations and not instance_db_name:
             self.warning('"dbname" parameter must be set when using the "relations" parameter.')
 
-        if dbname is None:
-            dbname = 'postgres'
+        if instance_db_name is None:
+            instance_db_name = 'postgres'
+        elif instance_db_name != 'postgres':
+            track_all_relations_in_cluster = False
 
-        key = (host, port, dbname)
+        key = (host, port, instance_db_name)
 
         custom_metrics = self._get_custom_metrics(instance.get('custom_metrics', []), key)
 
@@ -613,32 +718,48 @@ SELECT relname,
             tags = list(set(tags))
 
         # preset tags to the database name
-        tags.extend(["db:%s" % dbname])
+        instance_tags = list(tags)
+        instance_tags.extend(["db:%s" % instance_db_name])
 
         self.log.debug("Custom metrics: %s" % custom_metrics)
 
         # preset tags to the database name
-        db = None
+        instance_db_conn = None
 
         # Collect metrics
         try:
             # Check version
-            db = self.get_connection(key, host, port, user, password, dbname, ssl)
-            version = self._get_version(key, db)
+            instance_db_conn = self.get_connection(key, host, port, user, password, instance_db_name, ssl, False)
+            version = self._get_version(key, instance_db_conn)
             self.log.debug("Running check against version %s" % version)
-            self._collect_stats(key, db, tags, relations, custom_metrics)
+            self._collect_stats(key, instance_db_conn, instance_tags, [], custom_metrics)
+            if track_all_relations_in_cluster:
+                # so go over all databases using main connection (postgres db one)
+                db_list = self._get_all_databases(instance_db_conn)
+                for db_name in db_list:
+                    db_key = (host, port, db_name)
+                    db_tags = list(tags)
+                    db_tags.extend(["db:%s" % db_name])
+                    db_conn = self.get_connection(db_key, host, port, user, password, db_name, ssl, False)
+                    self._collect_relations_stats_only(db_key, db_conn, db_tags, relations)
+                    try:
+                        # commit to close the current query transaction
+                        db_conn.commit()
+                    except Exception, e:
+                        self.log.warning("Unable to commit: {0}".format(e))
+
         except ShouldRestartException:
             self.log.info("Resetting the connection")
-            db = self.get_connection(key, host, port, user, password, dbname, ssl, use_cached=False)
-            self._collect_stats(key, db, tags, relations, custom_metrics)
+            instance_db_conn = self.get_connection(key, host, port, user, password, instance_db_name, ssl, False)
+            self._collect_stats(key, instance_db_conn, instance_tags, [], custom_metrics)
 
-        if db is not None:
-            service_check_tags = self._get_service_check_tags(host, port, dbname)
-            message = u'Established connection to postgres://%s:%s/%s' % (host, port, dbname)
+        if instance_db_conn is not None:
+            service_check_tags = self._get_service_check_tags(host, port, instance_db_name)
+            message = u'Established connection to postgres://%s:%s/%s' % (host, port, instance_db_name)
             self.service_check(self.SERVICE_CHECK_NAME, AgentCheck.OK,
                 tags=service_check_tags, message=message)
             try:
                 # commit to close the current query transaction
-                db.commit()
+                instance_db_conn.commit()
             except Exception, e:
                 self.log.warning("Unable to commit: {0}".format(e))
